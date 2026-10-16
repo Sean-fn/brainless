@@ -65,7 +65,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         mountAndStartEngines()
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            self?.refreshOllama()
+            // 雲端就緒後不再輪詢（每次檢查是兩個 HTTPS 請求，太頻繁會被限流）；潤稿失敗時會重新檢查
+            if self?.ollamaStatus != .ready { self?.refreshOllama() }
             if self?.state == .idle { self?.whisper.checkHealth() }
         }
 
@@ -440,6 +441,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                     self.insert(out.isEmpty ? text : out, raw: text, mode: mode, seconds: seconds)
                 case .failure(let e):
                     Log.w("ollama failed: \(e)")
+                    self.refreshOllama()
                     if mode == .dictate {
                         self.overlay.show(.info("潤稿失敗，先貼原文：\(e.localizedDescription)"))
                         self.insert(text, raw: text, mode: mode, seconds: seconds)
@@ -476,6 +478,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                     NSPasteboard.general.setString(out, forType: .string)
                     self.overlay.show(.info("重新潤稿完成，已複製到剪貼簿"))
                 case .failure(let e):
+                    self.refreshOllama()
                     self.overlay.show(.error("重新潤稿失敗：\(e.localizedDescription)"))
                 }
             }

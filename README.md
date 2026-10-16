@@ -93,7 +93,7 @@ cp -R "build/Brainless Cloud.app" /Applications/
 
 - 錄音只送到本機的 `127.0.0.1:8179`（whisper-server），它只聽本機。
 - 辨識出來的文字（加上詞典裡相關的詞）會用 HTTPS 送到 `ollama.com` 潤稿。Ollama 的[隱私政策](https://ollama.com/privacy)寫明：雲端請求只在處理時暫存，不保存，也不拿去訓練模型。
-- App 每 15 秒向 `ollama.com` 檢查一次 API key 和模型狀態，不含任何文字內容。
+- App 在啟動、改設定、潤稿失敗時，會向 `ollama.com` 檢查 API key 和模型狀態（連不上時每 15 秒重試一次），不含任何文字內容。
 - API key 存在 macOS 鑰匙圈，不寫進設定檔。
 - 歷史紀錄與詞典存在 `~/Library/Application Support/BrainlessCloud/`，檔案權限 600。
 - 記錄檔不存逐字稿內容，只記字數與耗時。
@@ -123,7 +123,7 @@ cp -R "build/Brainless Cloud.app" /Applications/
 
 **Build**: `./build.sh` with Xcode Command Line Tools only, then `cp -R "build/Brainless Cloud.app" /Applications/`. GitHub Actions builds the app on macOS for every push and uploads it as an artifact.
 
-**Privacy**: audio goes only to the local whisper-server (127.0.0.1:8179). The recognized text (plus related dictionary terms) goes to `ollama.com` over HTTPS; Ollama's [privacy policy](https://ollama.com/privacy) says cloud prompts are processed transiently, not stored and not used for training. Every 15 seconds the app checks the API key and model status with ollama.com (no text content). The API key lives in the Keychain; history and dictionary stay in `~/Library/Application Support/BrainlessCloud/` with 600 permissions; logs never contain transcripts.
+**Privacy**: audio goes only to the local whisper-server (127.0.0.1:8179). The recognized text (plus related dictionary terms) goes to `ollama.com` over HTTPS; Ollama's [privacy policy](https://ollama.com/privacy) says cloud prompts are processed transiently, not stored and not used for training. The app checks the API key and model status with ollama.com at launch, after settings changes and after a failed request (every 15 seconds while it can't connect); these checks carry no text content. The API key lives in the Keychain; history and dictionary stay in `~/Library/Application Support/BrainlessCloud/` with 600 permissions; logs never contain transcripts.
 
 **Running both apps**: both react to the same hotkey if both are running, so give one of them a different key.
 
