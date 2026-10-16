@@ -1,73 +1,89 @@
 import Foundation
 
-/// 跟本機 Ollama 講話（潤稿模型由設定決定）。
+/// 跟 Ollama Cloud 講話（潤稿模型由設定決定）。
 final class OllamaClient {
     enum Status: Equatable {
-        case notRunning
-        case modelMissing(found: [String])
+        case checking
+        case noKey
+        case badKey
+        case unreachable(String)
+        case modelMissing
         case ready
     }
     private let settings = Settings.shared
 
     private var base: URL { URL(string: settings.ollamaURL)! }
-    /// 數字 -1 代表永遠不卸載（要送數字，送字串會被 Ollama 退回 400）
-    private var keepAlive: Any { settings.keepModelLoaded ? -1 : "30m" }
+    /// 送給目前模型的 thinking 參數（/api/show 查到的）；nil 代表不送、用模型預設。只在主執行緒讀寫。
+    private var think: Any?
 
-    /// 關掉常駐時把模型卸載
-    func unload() {
-        var req = URLRequest(url: base.appendingPathComponent("api/generate"))
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": settings.ollamaModel, "keep_alive": 0])
-        URLSession.shared.dataTask(with: req).resume()
-    }
-
+    /// 先用 /api/usage 驗 API key（不花 token；/api/tags 和 /api/show 是公開的，key 錯也回 200），
+    /// 再用 /api/show 確認模型存在、查它的 thinking 選項。
     func checkStatus(_ cb: @escaping (Status) -> Void) {
-        var req = URLRequest(url: base.appendingPathComponent("api/tags"))
-        req.timeoutInterval = 3
-        URLSession.shared.dataTask(with: req) { data, _, err in
-            guard err == nil, let data = data,
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let models = obj["models"] as? [[String: Any]] else {
-                DispatchQueue.main.async { cb(.notRunning) }
-                return
+        let key = CloudKey.read()
+        guard !key.isEmpty else { DispatchQueue.main.async { cb(.noKey) }; return }
+        var usage = URLComponents(url: base.appendingPathComponent("api/usage"), resolvingAgainstBaseURL: false)!
+        usage.queryItems = [URLQueryItem(name: "range", value: "24h")]
+        var req = URLRequest(url: usage.url!)
+        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 5
+        URLSession.shared.dataTask(with: req) { _, resp, err in
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if let err = err {
+                DispatchQueue.main.async { cb(.unreachable(err.localizedDescription)) }
+            } else if code == 401 || code == 403 {
+                DispatchQueue.main.async { cb(.badKey) }
+            } else if code != 200 {
+                DispatchQueue.main.async { cb(.unreachable("HTTP \(code)")) }
+            } else {
+                self.checkModel(key: key, cb)
             }
-            let names = models.compactMap { $0["name"] as? String }
-            let want = self.settings.ollamaModel
-            let has = names.contains { $0 == want || $0 == want + ":latest" || $0.hasPrefix(want) }
-            DispatchQueue.main.async { cb(has ? .ready : .modelMissing(found: names)) }
         }.resume()
     }
 
-    /// 先讓模型載進記憶體（第一次從外接硬碟讀 23 GB 會花一陣子）
-    func warmUp() {
-        var req = URLRequest(url: base.appendingPathComponent("api/generate"))
+    private func checkModel(key: String, _ cb: @escaping (Status) -> Void) {
+        var req = URLRequest(url: base.appendingPathComponent("api/show"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let payload: [String: Any] = ["model": settings.ollamaModel, "keep_alive": keepAlive, "options": ["num_ctx": 4096]]
-        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        req.timeoutInterval = 300
-        URLSession.shared.dataTask(with: req) { _, _, err in
-            Log.w("ollama warmUp done err=\(err?.localizedDescription ?? "none")")
+        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": settings.ollamaModel])
+        req.timeoutInterval = 5
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let info = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            DispatchQueue.main.async {
+                if let err = err { cb(.unreachable(err.localizedDescription)); return }
+                if code == 404 { cb(.modelMissing); return }
+                guard code == 200, let info = info else { cb(.unreachable("HTTP \(code)")); return }
+                self.think = OllamaClient.lowestThink(info["thinking"] as? [String: Any])
+                cb(.ready)
+            }
         }.resume()
+    }
+
+    /// thinking 能關就關（false），不能關就用最低等級；模型沒有 thinking 選項就不送
+    static func lowestThink(_ thinking: [String: Any]?) -> Any? {
+        guard let values = thinking?["values"] as? [Any] else { return nil }
+        if values.contains(where: { ($0 as? Bool) == false }) { return false }
+        let levels = values.compactMap { $0 as? String }
+        if levels.contains("low") { return "low" }
+        return levels.first
     }
 
     func chat(system: String, user: String, completion: @escaping (Swift.Result<String, Error>) -> Void) {
         var req = URLRequest(url: base.appendingPathComponent("api/chat"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let payload: [String: Any] = [
+        req.setValue("Bearer \(CloudKey.read())", forHTTPHeaderField: "Authorization")
+        var payload: [String: Any] = [
             "model": settings.ollamaModel,
             "stream": false,
-            "think": false,
-            "keep_alive": keepAlive,
             "messages": [
                 ["role": "system", "content": system],
                 ["role": "user", "content": user],
             ],
-            // 聽寫用不到長上下文；num_ctx 壓在 4096 讓 KV 快取只佔幾百 MB，不然 Ollama 會用 32k 吃掉十幾 GB
-            "options": ["temperature": 0.2, "num_predict": 2048, "num_ctx": 4096],
+            "options": ["temperature": 0.2, "num_predict": 2048],
         ]
+        if let think = think { payload["think"] = think }
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         req.timeoutInterval = 90
         let t0 = Date()

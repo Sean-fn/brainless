@@ -144,11 +144,6 @@ final class Settings {
         get { d.string(forKey: "customLabel") ?? "尚未設定" }
         set { d.set(newValue, forKey: "customLabel") }
     }
-    /// 潤稿模型常駐記憶體（不常駐的話閒置 30 分鐘會被卸載，下次要等十幾秒重新載入）
-    var keepModelLoaded: Bool {
-        get { bool("keepModelLoaded", default: true) }
-        set { d.set(newValue, forKey: "keepModelLoaded") }
-    }
     /// 自動偵測時允許的語言（Whisper 回傳的英文名稱）；偵測到名單外的語言就用主要語言重辨一次
     var allowedLanguages: [String] {
         get { d.stringArray(forKey: "allowedLanguages") ?? ["chinese", "english"] }
@@ -194,11 +189,12 @@ final class Settings {
     static let translateTargets = ["英文", "日文", "韓文", "繁體中文"]
 
     var ollamaURL: String {
-        get { d.string(forKey: "ollamaURL") ?? "http://127.0.0.1:11434" }
+        get { d.string(forKey: "ollamaURL") ?? "https://ollama.com" }
         set { d.set(newValue, forKey: "ollamaURL") }
     }
+    /// Ollama Cloud 上的模型名稱（用 ollama.com/api/tags 列出的名字）
     var ollamaModel: String {
-        get { d.string(forKey: "ollamaModel") ?? "qwen3.5:9b" }
+        get { d.string(forKey: "ollamaModel") ?? "deepseek-v4.1-flash" }
         set { d.set(newValue, forKey: "ollamaModel") }
     }
     var whisperServerPath: String {

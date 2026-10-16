@@ -18,25 +18,23 @@ final class HubModel: ObservableObject {
     @Published var whisperOK = false
     @Published var whisperStatus = "未啟動"
     @Published var ollamaOK = false
-    @Published var ollamaStatus = "未連線"
-    @Published var ollamaModel = "qwen3.5:9b"
-    @Published var whisperModelName = "large-v3"
+    @Published var ollamaStatus = "檢查中…"
+    @Published var ollamaModel = "deepseek-v4.1-flash"
+    @Published var apiKeyNeeded = false
+    @Published var whisperModelName = "large-v3-q5_0"
     @Published var volumeMounted = false
     @Published var appState = "待命中"
     @Published var learningHotkey = false
     @Published var micKeepAlive: MicKeepAlive = .always
-    @Published var keepModelLoaded = true
     @Published var fastWhisper = false
     @Published var allowedLanguages: [String] = ["chinese", "english"]
     @Published var micStandby = false
     @Published var micName = ""
     @Published var whisperModelPresent = true
     @Published var whisperServerPresent = true
-    @Published var ollamaInstalled = true
     @Published var usesImage = false
     let downloader = ModelDownloader()
-    let puller = OllamaPuller()
-    var setupNeeded: Bool { !(whisperModelPresent && whisperServerPresent && ollamaInstalled && ollamaOK) }
+    var setupNeeded: Bool { !(whisperModelPresent && whisperServerPresent && ollamaOK) }
 
     // 由 AppController 設定的動作
     var onSetHotkey: ((HotkeyChoice) -> Void)?
@@ -47,7 +45,6 @@ final class HubModel: ObservableObject {
     var onSetRefine: ((Bool) -> Void)?
     var onSetSounds: ((Bool) -> Void)?
     var onSetMicKeepAlive: ((MicKeepAlive) -> Void)?
-    var onSetKeepModelLoaded: ((Bool) -> Void)?
     var onSetFastWhisper: ((Bool) -> Void)?
     var onToggleAllowedLanguage: ((String) -> Void)?
     var onToggleLogin: (() -> Void)?
@@ -55,5 +52,6 @@ final class HubModel: ObservableObject {
     var onOpenLogs: (() -> Void)?
     var onRetry: ((HistoryItem) -> Void)?
     var onDownloadWhisper: (() -> Void)?
-    var onPullModel: (() -> Void)?
+    var onSetAPIKey: ((String) -> Void)?
+    var onSetOllamaModel: ((String) -> Void)?
 }

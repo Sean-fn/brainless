@@ -83,7 +83,7 @@ final class HistoryStore: ObservableObject {
     }
 }
 
-/// 個人詞典：專有名詞、人名、公司名，會餵給 Whisper 與 Qwen
+/// 個人詞典：專有名詞、人名、公司名，會餵給 Whisper 與潤稿模型
 final class DictionaryStore: ObservableObject {
     @Published private(set) var words: [String] = []
     private let url = Settings.supportDir.appendingPathComponent("dictionary.json")
@@ -111,7 +111,7 @@ final class DictionaryStore: ObservableObject {
         for w in words { if s.count + w.count > 200 { break }; s += (s.isEmpty ? "" : "、") + w }
         return s.isEmpty ? "" : " 專有名詞：\(s)。"
     }
-    /// 給 Qwen 的補充規則：固定帶前 30 個核心詞，再挑出跟這段逐字稿相關的詞（最多 80 個）
+    /// 給潤稿模型的補充規則：固定帶前 30 個核心詞，再挑出跟這段逐字稿相關的詞（最多 80 個）
     func llmHint(for transcript: String) -> String {
         guard !words.isEmpty else { return "" }
         let core = Array(words.prefix(30))

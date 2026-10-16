@@ -224,7 +224,7 @@ struct HomePage: View {
             VStack(alignment: .leading, spacing: 24) {
                 Text("說話，不要打字").font(.system(size: 44, weight: .bold))
                 if model.setupNeeded {
-                    SetupCard(model: model, downloader: model.downloader, puller: model.puller)
+                    SetupCard(model: model, downloader: model.downloader)
                 }
                 HStack(alignment: .top, spacing: 24) {
                     VStack(alignment: .leading, spacing: 16) {
@@ -270,8 +270,8 @@ struct HomePage: View {
                             VStack(alignment: .leading, spacing: 14) {
                                 Text("模型狀態").font(.system(size: 15, weight: .bold))
                                 modelRow(ok: model.whisperOK, title: "whisper.cpp 語音辨識", sub: "\(model.whisperModelName)・\(model.whisperStatus)")
-                                modelRow(ok: model.ollamaOK, title: "Ollama 潤色／翻譯", sub: "\(model.ollamaModel)・\(model.ollamaStatus)")
-                                modelRow(ok: model.ollamaOK, title: "Ollama 問任何事", sub: "\(model.ollamaModel)・\(model.ollamaStatus)")
+                                modelRow(ok: model.ollamaOK, title: "Ollama Cloud 潤色／翻譯", sub: "\(model.ollamaModel)・\(model.ollamaStatus)")
+                                modelRow(ok: model.ollamaOK, title: "Ollama Cloud 問任何事", sub: "\(model.ollamaModel)・\(model.ollamaStatus)")
                                 if model.usesImage {
                                     modelRow(ok: model.volumeMounted, title: "模型磁碟映像", sub: model.volumeMounted ? "已掛載" : "未掛載，請插上外接硬碟")
                                 }
@@ -456,6 +456,7 @@ struct FlowLayout: Layout {
 
 struct SettingsPage: View {
     @ObservedObject var model: HubModel
+    @State private var modelName = ""
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -518,13 +519,12 @@ struct SettingsPage: View {
                 section("行為") {
                     Toggle("AI 潤稿（\(model.ollamaModel) 去贅字、補標點、轉繁體）", isOn: Binding(get: { model.refine }, set: { model.onSetRefine?($0) }))
                     Toggle("快速辨識（短句快一倍，但準確度會掉，預設關閉）", isOn: Binding(get: { model.fastWhisper }, set: { model.onSetFastWhisper?($0) }))
-                    Toggle("潤稿模型常駐記憶體（關掉的話閒置 30 分鐘會卸載，下次要多等十幾秒）", isOn: Binding(get: { model.keepModelLoaded }, set: { model.onSetKeepModelLoaded?($0) }))
                     Toggle("提示音", isOn: Binding(get: { model.sounds }, set: { model.onSetSounds?($0) }))
                     Toggle("登入時自動啟動", isOn: Binding(get: { model.loginEnabled }, set: { _ in model.onToggleLogin?() }))
                 }
                 section("模型") {
                     HStack(spacing: 10) { Circle().fill(model.whisperOK ? Theme.green : Theme.orange).frame(width: 8, height: 8); Text("whisper.cpp \(model.whisperModelName)：\(model.whisperStatus)") }
-                    HStack(spacing: 10) { Circle().fill(model.ollamaOK ? Theme.green : Theme.orange).frame(width: 8, height: 8); Text("Ollama \(model.ollamaModel)：\(model.ollamaStatus)") }
+                    HStack(spacing: 10) { Circle().fill(model.ollamaOK ? Theme.green : Theme.orange).frame(width: 8, height: 8); Text("Ollama Cloud \(model.ollamaModel)：\(model.ollamaStatus)") }
                     if model.usesImage {
                         HStack(spacing: 10) { Circle().fill(model.volumeMounted ? Theme.green : Theme.orange).frame(width: 8, height: 8); Text("模型磁碟映像：\(model.volumeMounted ? "已掛載" : "未掛載")") }
                     }
@@ -532,8 +532,24 @@ struct SettingsPage: View {
                         Button("重啟引擎") { model.onRestartEngines?() }
                         Button("打開記錄檔資料夾") { model.onOpenLogs?() }
                     }
+                    Divider()
+                    HStack(spacing: 8) {
+                        Text("潤稿模型").font(.system(size: 13))
+                        TextField("例如 deepseek-v4.1-flash", text: $modelName).frame(maxWidth: 220)
+                        Button("套用") { model.onSetOllamaModel?(modelName) }
+                            .disabled(modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || modelName == model.ollamaModel)
+                    }
+                    .onAppear { modelName = model.ollamaModel }
+                    if !model.apiKeyNeeded {
+                        HStack(spacing: 8) {
+                            Text("更換 API key").font(.system(size: 13))
+                            APIKeyField(model: model)
+                        }
+                    }
+                    Text("模型名稱用 ollama.com/search?c=cloud 列出的名稱。App 會自動關掉 thinking；關不掉的模型（例如 glm-5.3-flash）改用最低等級，潤稿會比較慢。API key 存在鑰匙圈。")
+                        .font(.system(size: 12)).foregroundColor(.secondary)
                     if model.setupNeeded {
-                        SetupCard(model: model, downloader: model.downloader, puller: model.puller)
+                        SetupCard(model: model, downloader: model.downloader)
                     }
                 }
             }

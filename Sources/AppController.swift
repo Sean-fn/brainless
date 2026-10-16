@@ -41,14 +41,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let hub = HubModel()
     private let hubWindow = HubWindowController()
     private var statusItem: NSStatusItem!
-    private var ollamaStatus: OllamaClient.Status = .notRunning
+    private var ollamaStatus: OllamaClient.Status = .checking
     private var pressStartedRecording = false
     private var recordingStartedAt = Date.distantPast
     private var autoStopTimer: Timer?
     private var lastResult: String?
     private var accessibilityTimer: Timer?
     private var hotkeyRunning = false
-    private var warmedUp = false
 
     // MARK: - lifecycle
 
@@ -68,10 +67,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.refreshOllama()
             if self?.state == .idle { self?.whisper.checkHealth() }
-        }
-        Timer.scheduledTimer(withTimeInterval: 1200, repeats: true) { [weak self] _ in
-            guard let self = self, self.settings.keepModelLoaded, self.settings.refine, self.ollamaStatus == .ready else { return }
-            self.ollama.warmUp()
         }
 
         recorder.onLevel = { [weak self] l in self?.overlay.level(l) }
@@ -110,8 +105,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 } else {
                     self.whisper.start()
                 }
-                VolumeManager.ensureOllamaRunning()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { self.refreshOllama() }
+                self.refreshOllama()
                 self.rebuildMenu()
                 self.syncHub()
             }
@@ -126,15 +120,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         hub.onSetMode = { [weak self] m in self?.settings.mode = m; self?.afterSettingsChange() }
         hub.onSetTarget = { [weak self] t in self?.settings.translateTarget = t; self?.afterSettingsChange() }
         hub.onSetLanguage = { [weak self] l in self?.settings.language = l; self?.afterSettingsChange() }
-        hub.onSetRefine = { [weak self] v in
-            guard let self = self else { return }
-            self.settings.refine = v
-            if v && self.ollamaStatus == .ready { self.ollama.warmUp() }
-            self.afterSettingsChange()
-        }
+        hub.onSetRefine = { [weak self] v in self?.settings.refine = v; self?.afterSettingsChange() }
         hub.onSetSounds = { [weak self] v in self?.settings.sounds = v; self?.afterSettingsChange() }
         hub.onSetMicKeepAlive = { [weak self] k in self?.setMicKeepAlive(k) }
-        hub.onSetKeepModelLoaded = { [weak self] v in self?.setKeepModelLoaded(v) }
         hub.onSetFastWhisper = { [weak self] v in self?.settings.fastWhisper = v; self?.afterSettingsChange() }
         hub.onToggleAllowedLanguage = { [weak self] name in
             guard let self = self else { return }
@@ -157,15 +145,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             self.whisper.start()
             self.syncHub()
         }
-        hub.onPullModel = { [weak self] in
-            guard let self = self else { return }
-            VolumeManager.ensureOllamaRunning()
-            self.hub.puller.start(model: self.settings.ollamaModel)
-        }
-        hub.puller.onDone = { [weak self] in
-            self?.overlay.show(.info("潤稿模型下載完成"))
-            self?.refreshOllama()
-        }
+        hub.onSetAPIKey = { [weak self] key in self?.setAPIKey(key) }
+        hub.onSetOllamaModel = { [weak self] name in self?.setOllamaModel(name) }
         syncHub()
     }
 
@@ -184,15 +165,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         hub.ollamaOK = ollamaStatus == .ready
         hub.ollamaStatus = ollamaStatusText()
         hub.ollamaModel = settings.ollamaModel
+        hub.apiKeyNeeded = ollamaStatus == .noKey || ollamaStatus == .badKey
         hub.whisperModelName = URL(fileURLWithPath: settings.whisperModelPath).deletingPathExtension().lastPathComponent.replacingOccurrences(of: "ggml-", with: "")
         hub.volumeMounted = VolumeManager.isMounted
         hub.appState = statusLine()
         hub.whisperModelPresent = ModelSetup.whisperModelPresent
         hub.whisperServerPresent = ModelSetup.findWhisperServer() != nil
-        hub.ollamaInstalled = ModelSetup.ollamaInstalled
         hub.usesImage = VolumeManager.usesImage
         hub.micKeepAlive = settings.micKeepAlive
-        hub.keepModelLoaded = settings.keepModelLoaded
         hub.fastWhisper = settings.fastWhisper
         hub.allowedLanguages = settings.allowedLanguages
         hub.micStandby = recorder.isCapturing
@@ -245,10 +225,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             let changed = s != self.ollamaStatus
             self.ollamaStatus = s
             if changed { self.rebuildMenu(); self.syncHub() }
-            if s == .ready && !self.warmedUp && self.settings.refine {
-                self.warmedUp = true
-                self.ollama.warmUp()
-            }
         }
     }
 
@@ -433,10 +409,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard needsLLM else { insert(text, raw: text, mode: mode, seconds: seconds); return }
         guard ollamaStatus == .ready else {
             if mode == .dictate {
-                overlay.show(.info("Qwen 還沒準備好，先貼原文"))
+                overlay.show(.info("潤稿模型還沒準備好（\(ollamaStatusText())），先貼原文"))
                 insert(text, raw: text, mode: mode, seconds: seconds)
             } else {
-                fail("Qwen 還沒準備好：\(ollamaStatusText())")
+                fail("潤稿模型還沒準備好：\(ollamaStatusText())")
             }
             return
         }
@@ -457,7 +433,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                     }
                     if mode == .dictate && Prompts.looksLikeReply(raw: text, out: out) {
                         Log.w("llm reply suspected (\(text.count) -> \(out.count) chars), using raw transcript")
-                        self.overlay.show(.info("Qwen 想回話，改貼原文"))
+                        self.overlay.show(.info("潤稿模型想回話，改貼原文"))
                         self.insert(text, raw: text, mode: mode, seconds: seconds)
                         return
                     }
@@ -465,10 +441,10 @@ final class AppController: NSObject, NSApplicationDelegate {
                 case .failure(let e):
                     Log.w("ollama failed: \(e)")
                     if mode == .dictate {
-                        self.overlay.show(.info("Qwen 沒回應，先貼原文"))
+                        self.overlay.show(.info("潤稿失敗，先貼原文：\(e.localizedDescription)"))
                         self.insert(text, raw: text, mode: mode, seconds: seconds)
                     } else {
-                        self.fail("Qwen 失敗：\(e.localizedDescription)")
+                        self.fail("潤稿失敗：\(e.localizedDescription)")
                     }
                 }
             }
@@ -482,9 +458,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         playSound("Glass")
         overlay.show(.done(text))
         TextInserter.paste(text) { [weak self] in
-            guard let self = self else { return }
-            self.state = .idle
-            if self.ollamaStatus == .ready && self.settings.refine { self.ollama.warmUp() }
+            self?.state = .idle
         }
     }
 
@@ -555,13 +529,26 @@ final class AppController: NSObject, NSApplicationDelegate {
         syncHub()
     }
 
-    private func setKeepModelLoaded(_ v: Bool) {
-        settings.keepModelLoaded = v
-        if v { if ollamaStatus == .ready { ollama.warmUp() } } else { ollama.unload() }
-        overlay.show(.info(v ? "潤稿模型會常駐記憶體" : "潤稿模型閒置 30 分鐘後會卸載"))
-        afterSettingsChange()
+    private func setAPIKey(_ key: String) {
+        if let err = CloudKey.save(key.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            overlay.show(.error("API key 存不進鑰匙圈：\(err)"))
+            return
+        }
+        overlay.show(.info("API key 已存進鑰匙圈，正在檢查"))
+        recheckOllama()
     }
-    @objc private func toggleKeepModelLoaded() { setKeepModelLoaded(!settings.keepModelLoaded) }
+
+    private func setOllamaModel(_ name: String) {
+        settings.ollamaModel = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        recheckOllama()
+    }
+
+    /// 換了 key 或模型：先標成檢查中，免得在檢查完之前用舊的 thinking 參數送出
+    private func recheckOllama() {
+        ollamaStatus = .checking
+        afterSettingsChange()
+        refreshOllama()
+    }
 
     private func setMicKeepAlive(_ k: MicKeepAlive) {
         settings.micKeepAlive = k
@@ -626,8 +613,11 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func ollamaStatusText() -> String {
         switch ollamaStatus {
-        case .notRunning: return "Ollama 沒有在跑"
-        case .modelMissing: return "模型還沒下載完"
+        case .checking: return "檢查中…"
+        case .noKey: return "還沒設定 API key"
+        case .badKey: return "API key 無效"
+        case .unreachable(let why): return "連不上 Ollama Cloud（\(why)）"
+        case .modelMissing: return "Ollama Cloud 沒有這個模型，到設定頁改名稱"
         case .ready: return "就緒"
         }
     }
@@ -659,7 +649,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         m.addItem(open)
         m.addItem(.separator())
         m.addItem(item("Whisper large-v3：\(whisperStatusText())", nil, enabled: false))
-        m.addItem(item("Qwen（\(settings.ollamaModel)）：\(ollamaStatusText())", nil, enabled: false))
+        m.addItem(item("潤稿（Ollama Cloud \(settings.ollamaModel)）：\(ollamaStatusText())", nil, enabled: false))
         if VolumeManager.usesImage {
             m.addItem(item("模型磁碟映像：\(VolumeManager.isMounted ? "已掛載" : "未掛載")", nil, enabled: false))
         }
@@ -680,7 +670,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             item($0.title, #selector(pickLanguage(_:)), rep: $0.rawValue, checked: $0 == settings.language)
         }))
         m.addItem(item("AI 潤稿（\(settings.ollamaModel)）", #selector(toggleRefine), checked: settings.refine))
-        m.addItem(item("潤稿模型常駐記憶體", #selector(toggleKeepModelLoaded), checked: settings.keepModelLoaded))
         m.addItem(item("提示音", #selector(toggleSounds), checked: settings.sounds))
         m.addItem(submenu("麥克風保持喚醒：\(settings.micKeepAlive.shortTitle)（\(recorder.isCapturing ? "常駐中" : "休眠中")）", MicKeepAlive.allCases.map {
             item($0.title, #selector(pickMicKeepAlive(_:)), rep: $0.rawValue, checked: $0 == settings.micKeepAlive)
@@ -720,7 +709,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     @objc private func toggleRefine() {
         settings.refine.toggle()
-        if settings.refine && ollamaStatus == .ready { ollama.warmUp() }
         afterSettingsChange()
     }
     @objc private func toggleSounds() { settings.sounds.toggle(); afterSettingsChange() }
@@ -754,10 +742,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let a = NSAlert()
         a.messageText = "\(AppInfo.name) \(AppInfo.version)"
         a.informativeText = """
-        本機語音聽寫。按一下快捷鍵說話，再按一下，整理好的文字就出現在游標那裡。
-        語音辨識：Whisper large-v3（whisper.cpp，Metal）
-        潤稿：\(settings.ollamaModel)（Ollama）
-        錄音與文字都不離開這台電腦。
+        語音聽寫。按一下快捷鍵說話，再按一下，整理好的文字就出現在游標那裡。
+        語音辨識：Whisper large-v3 Q5（whisper.cpp，Metal，在這台電腦上）
+        潤稿：\(settings.ollamaModel)（Ollama Cloud）
+        錄音只留在這台電腦；辨識出來的文字會送到 Ollama Cloud 潤稿。
         """
         a.addButton(withTitle: "好")
         a.runModal()

@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 /// 模型資料夾：預設在 Application Support；也可以指定一個 APFS 磁碟映像（放外接硬碟），啟動時自動掛載。
@@ -34,21 +33,5 @@ enum VolumeManager {
         p.waitUntilExit()
         if isMounted { Log.w("VolumeManager: image mounted at \(mountPoint.path)"); return nil }
         return "掛載模型磁碟映像失敗（hdiutil 代碼 \(p.terminationStatus)）"
-    }
-
-    /// Ollama 沒回應就把 Ollama.app 叫起來
-    static func ensureOllamaRunning() {
-        guard let url = URL(string: Settings.shared.ollamaURL + "/api/version") else { return }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 3
-        URLSession.shared.dataTask(with: req) { _, resp, _ in
-            guard resp == nil else { return }
-            Log.w("VolumeManager: Ollama not responding, launching Ollama.app")
-            let app = URL(fileURLWithPath: "/Applications/Ollama.app")
-            guard FileManager.default.fileExists(atPath: app.path) else { return }
-            DispatchQueue.main.async {
-                NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
-            }
-        }.resume()
     }
 }
