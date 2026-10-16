@@ -2,19 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Brainless</string>
-  <key>CFBundleDisplayName</key><string>Brainless</string>
-  <key>CFBundleIdentifier</key><string>app.whispry.mac</string>
-  <key>CFBundleVersion</key><string>6</string>
-  <key>CFBundleShortVersionString</key><string>1.0.5</string>
-  <key>CFBundleExecutable</key><string>Brainless</string>
+  <key>CFBundleName</key><string>Brainless Cloud</string>
+  <key>CFBundleDisplayName</key><string>Brainless Cloud</string>
+  <key>CFBundleIdentifier</key><string>app.whispry.mac.cloud</string>
+  <key>CFBundleVersion</key><string>7</string>
+  <key>CFBundleShortVersionString</key><string>1.1.0</string>
+  <key>CFBundleExecutable</key><string>BrainlessCloud</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>Brainless 需要麥克風來錄下你說的話，錄音只留在這台電腦。</string>
-  <key>NSHumanReadableCopyright</key><string>Brainless · 本機語音聽寫</string>
+  <key>NSMicrophoneUsageDescription</key><string>Brainless Cloud 需要麥克風來錄下你說的話，錄音只留在這台電腦。</string>
+  <key>NSHumanReadableCopyright</key><string>Brainless Cloud · 本機辨識、雲端潤稿</string>
 </dict>
 </plist>

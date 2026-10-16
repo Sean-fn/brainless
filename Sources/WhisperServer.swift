@@ -66,7 +66,7 @@ final class WhisperServer {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if self.state != .stopped {
-                    self.state = .failed("whisper-server 意外結束（代碼 \(proc.terminationStatus)），看 ~/Library/Logs/Whispry/whisper-server.log")
+                    self.state = .failed("whisper-server 意外結束（代碼 \(proc.terminationStatus)），看 \((Settings.logDir.path as NSString).abbreviatingWithTildeInPath)/whisper-server.log")
                 }
                 self.process = nil
             }

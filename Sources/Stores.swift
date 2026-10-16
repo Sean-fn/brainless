@@ -2,8 +2,10 @@ import Foundation
 import Combine
 
 enum AppInfo {
-    static let name = "Brainless"
-    static let version = "1.0.5"
+    static let name = "Brainless Cloud"
+    static let version = "1.1.0"
+    /// Application Support 與 Logs 底下的資料夾；和原版 Brainless（Whispry）分開，兩個可以並存
+    static let dataFolder = "BrainlessCloud"
 }
 
 struct HistoryItem: Codable, Identifiable, Equatable {

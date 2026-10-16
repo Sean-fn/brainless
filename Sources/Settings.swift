@@ -215,8 +215,9 @@ final class Settings {
         get { d.string(forKey: "whisperModelPath") ?? (modelsDir as NSString).appendingPathComponent(ModelSetup.whisperModelFileName) }
         set { d.set(newValue, forKey: "whisperModelPath") }
     }
+    /// 和原版 Brainless（8178）錯開，兩個同時開著時不會共用對方的 whisper-server
     var whisperPort: Int {
-        get { let p = d.integer(forKey: "whisperPort"); return p == 0 ? 8178 : p }
+        get { let p = d.integer(forKey: "whisperPort"); return p == 0 ? 8179 : p }
         set { d.set(newValue, forKey: "whisperPort") }
     }
     /// 單次錄音上限（秒）
@@ -224,14 +225,14 @@ final class Settings {
 
     static var supportDir: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("Whispry", isDirectory: true)
+        let dir = base.appendingPathComponent(AppInfo.dataFolder, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         return dir
     }
     static var logDir: URL {
         let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("Logs/Whispry", isDirectory: true)
+        let dir = base.appendingPathComponent("Logs/\(AppInfo.dataFolder)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
